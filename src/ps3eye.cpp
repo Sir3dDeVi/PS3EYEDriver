@@ -480,12 +480,14 @@ public:
 		return new_frame;
 	}
 
-	void Dequeue(uint8_t* new_frame, int frame_width, int frame_height, PS3EYECam::EOutputFormat outputFormat)
+	bool Dequeue(uint8_t* new_frame, int frame_width, int frame_height, PS3EYECam::EOutputFormat outputFormat, const std::chrono::milliseconds& timeout)
 	{		
 		std::unique_lock<std::mutex> lock(mutex);
 
 		// If there is no data in the buffer, wait until data becomes available
-		empty_condition.wait(lock, [this] () { return available != 0; });
+		bool success = empty_condition.wait_for(lock, timeout, [this] () { return available != 0; });
+		if (!success)
+			return false;
 
 		// Copy from internal buffer
 		uint8_t* source = frame_buffer + frame_size * tail;
@@ -506,6 +508,8 @@ public:
 		// Update tail and available count
 		tail = (tail + 1) % num_frames;
 		available--;
+
+		return true;
 	}
 	
 	void DebayerGray(int frame_width, int frame_height, const uint8_t* inBayer, uint8_t* outBuffer)
@@ -1214,9 +1218,9 @@ uint32_t PS3EYECam::getOutputBytesPerPixel() const
 	return 0;
 }
 
-void PS3EYECam::getFrame(uint8_t* frame)
+bool PS3EYECam::getFrame(uint8_t* frame, const std::chrono::milliseconds& timeout)
 {
-	urb->frame_queue->Dequeue(frame, frame_width, frame_height, frame_output_format);
+	return urb->frame_queue->Dequeue(frame, frame_width, frame_height, frame_output_format, timeout);
 }
 
 bool PS3EYECam::open_usb()
